@@ -5,8 +5,7 @@ libs = ["lib"]
 gas_reports = ["*"]
 solc = "0.8.19"
 remappings = ["@openzeppelin/=lib/openzeppelin-contracts/"]
-optimizer = true
-optimizer_runs = 10_000_000
+via_ir = true
 
 [profile.lite]
 optimizer = false
