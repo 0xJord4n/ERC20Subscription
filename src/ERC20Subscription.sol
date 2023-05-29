@@ -94,7 +94,7 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
             spender,
             value,
             recurrenceInterval,
-            approvedUntil
+            approveUntil
         );
 
         return true;
@@ -119,11 +119,11 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
         ] = value;
 
         emit ApprovalForSubscription(
-            owner,
+            msg.sender,
             spender,
             value,
             recurrenceInterval,
-            approvedUntil
+            approveUntil
         );
 
         return true;
@@ -174,7 +174,7 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
         ] += addedAmount;
 
         emit ApprovalForSubscription(
-            owner,
+            msg.sender,
             spender,
             _allowances[msg.sender][spender][recurrenceInterval][approvedUntil],
             recurrenceInterval,
@@ -203,7 +203,7 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
         ] -= removedAmount;
 
         emit ApprovalForSubscription(
-            owner,
+            msg.sender,
             spender,
             _allowances[msg.sender][spender][recurrenceInterval][approvedUntil],
             recurrenceInterval,
