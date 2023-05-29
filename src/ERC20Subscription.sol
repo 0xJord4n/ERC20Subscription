@@ -1,35 +1,90 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@opensezppling/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "@openzeppelin/contracts/utils/Counters.sol";
 
 /**
  * @title ERC20Subscription
  * @dev An extension of the ERC20 token standard that allows for a new type
- of approval. This contract enables an owner to approve a spender to spend a
- fixed amount of tokens on their behalf, with a custom recurrence interval
- and for a specified duration of time. This allows for the creation
- of subscriptions using ERC20 tokens.
+ *  of approval. This contract enables an owner to approve a spender to spend a
+ *  fixed amount of tokens on their behalf, with a custom recurrence interval
+ *  and for a specified duration of time. This allows for the creation
+ *  of subscriptions using ERC20 tokens.
  */
-abstract contract ERC20Subscription is ERC20 {
+abstract contract ERC20Subscription is ERC20, EIP712 {
+    using Counters for Counters.Counter;
+
+    mapping(address => Counters.Counter) private _nonces;
+
     mapping(address => mapping(address => mapping(uint32 => mapping(uint48 => uint256)))) private _allowances;
-    mapping(address => mapping(address => mapping(uint32 => mapping(uint48 => mapping(uint32 => uint256))))) private _spent;
+    mapping(address => mapping(address => mapping(uint32 => mapping(uint48 => mapping(uint32 => uint256))))) private
+        _spent;
+
+    bytes32 private constant _PERMIT_TYPEHASH = keccak256(
+        "Permit(address owner,address spender,uint256 value,uint32 recurrenceInterval,uint48 approveUntil,uint256 nonce,uint256 deadline)"
+    );
+
+    constructor(string memory name) EIP712(name, "1") {}
+
+    /**
+     * @dev Permits the spender to spend tokens on behalf of the owner for a subscription, using a signed message.
+     * @param owner The owner of the tokens.
+     * @param spender The address to be approved.
+     * @param value The amount of tokens to be approved.
+     * @param recurrenceInterval The interval at which the subscription recurs.
+     * @param approveUntil The time until which the approval is valid.
+     * @param deadline The deadline timestamp for the permit.
+     * @param v The recovery id of the signature.
+     * @param r The r value of the signature.
+     * @param s The s value of the signature.
+     * @return A boolean value indicating whether the operation succeeded.
+     */
+    function permitForSubscription(
+        address owner,
+        address spender,
+        uint256 value,
+        uint32 recurrenceInterval,
+        uint48 approveUntil,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external virtual returns (bool) {
+        require(block.timestamp <= deadline, "ERC20SubscriptionPermit: expired deadline");
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                _PERMIT_TYPEHASH, owner, spender, value, recurrenceInterval, approveUntil, _useNonce(owner), deadline
+            )
+        );
+
+        bytes32 hash = _hashTypedDataV4(structHash);
+
+        address signer = ECDSA.recover(hash, v, r, s);
+
+        require(signer == owner, "ERC20SubscriptionPermit: invalid signature");
+
+        _allowances[owner][spender][recurrenceInterval][approveUntil] = value;
+        return true;
+    }
 
     /**
      * @dev Approve an address to spend a certain amount of tokens on behalf of the owner for a subscription.
      * @param spender The address to be approved.
-     * @param amount The amount of tokens to be approved.
+     * @param value The amount of tokens to be approved.
      * @param recurrenceInterval The interval at which the subscription recurs.
      * @param approveUntil The time until which the approval is valid.
      * @return A boolean value indicating whether the operation succeeded.
      */
-    function approveForSubscription(
-        address spender,
-        uint256 amount,
-        uint32 recurrenceInterval,
-        uint48 approveUntil
-    ) external virtual returns (bool) {
-        _allowances[msg.sender][spender][recurrenceInterval][approveUntil] = amount;
+    function approveForSubscription(address spender, uint256 value, uint32 recurrenceInterval, uint48 approveUntil)
+        external
+        virtual
+        returns (bool)
+    {
+        _allowances[msg.sender][spender][recurrenceInterval][approveUntil] = value;
         return true;
     }
 
@@ -41,12 +96,12 @@ abstract contract ERC20Subscription is ERC20 {
      * @param approvedUntil The time until which the approval is valid.
      * @return The allowance of the spender for a subscription on behalf of the owner.
      */
-    function allowanceForSubscription(
-        address owner,
-        address spender,
-        uint32 recurrenceInterval,
-        uint48 approvedUntil
-    ) public view virtual returns (uint256) {
+    function allowanceForSubscription(address owner, address spender, uint32 recurrenceInterval, uint48 approvedUntil)
+        public
+        view
+        virtual
+        returns (uint256)
+    {
         if (block.timestamp > approvedUntil && approvedUntil != 0) return 0;
 
         uint32 period = uint32(block.timestamp) / recurrenceInterval;
@@ -137,4 +192,32 @@ abstract contract ERC20Subscription is ERC20 {
 
         _spent[owner][spender][recurrenceInterval][approvedUntil][period] += amount;
     }
-} 
+
+    /**
+     * @dev Returns the current nonce for the given owner.
+     * @param owner The owner address.
+     * @return The current nonce value.
+     */
+    function nonces(address owner) public view virtual returns (uint256) {
+        return _nonces[owner].current();
+    }
+
+    /**
+     * @dev Returns the domain separator for EIP712.
+     * @return The domain separator.
+     */
+    function DOMAIN_SEPARATOR() external view returns (bytes32) {
+        return _domainSeparatorV4();
+    }
+
+    /**
+     * @dev Increments the nonce value for the given owner.
+     * @param owner The owner address.
+     * @return current The updated nonce value.
+     */
+    function _useNonce(address owner) internal virtual returns (uint256 current) {
+        Counters.Counter storage nonce = _nonces[owner];
+        current = nonce.current();
+        nonce.increment();
+    }
+}
