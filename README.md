@@ -10,16 +10,22 @@ An extension of the ERC20 token standard that allows for a new type of approval.
 
 ## Installation
 
-Manually:
-
-```text
-Take the content of the file ERC20Subscription.sol in src/ and import it in your project
-```
 
 Forge:
 
 ```sh
 forge install 0xJord4n/ERC20Subscription
+```
+
+Manually:
+
+```text
+Take the content of the file ERC20Subscription.sol in src directory and import it in your project
+```
+NPM:
+
+```text
+Soon
 ```
 
 ## Interface
