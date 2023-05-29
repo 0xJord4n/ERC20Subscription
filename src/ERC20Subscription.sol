@@ -19,12 +19,22 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
 
     mapping(address => Counters.Counter) private _nonces;
 
-    mapping(address => mapping(address => mapping(uint32 => mapping(uint48 => uint256)))) private _allowances;
-    mapping(address => mapping(address => mapping(uint32 => mapping(uint48 => mapping(uint32 => uint256))))) private
-        _spent;
+    mapping(address => mapping(address => mapping(uint32 => mapping(uint48 => uint256))))
+        private _allowances;
+    mapping(address => mapping(address => mapping(uint32 => mapping(uint48 => mapping(uint32 => uint256)))))
+        private _spent;
 
-    bytes32 private constant _PERMIT_TYPEHASH = keccak256(
-        "Permit(address owner,address spender,uint256 value,uint32 recurrenceInterval,uint48 approveUntil,uint256 nonce,uint256 deadline)"
+    bytes32 private constant _PERMIT_TYPEHASH =
+        keccak256(
+            "Permit(address owner,address spender,uint256 value,uint32 recurrenceInterval,uint48 approveUntil,uint256 nonce,uint256 deadline)"
+        );
+
+    event ApprovalForSubscription(
+        address owner,
+        address spender,
+        uint256 value,
+        uint32 recurrenceInterval,
+        uint48 approveUntil
     );
 
     constructor(string memory name) EIP712(name, "1") {}
@@ -53,11 +63,21 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
         bytes32 r,
         bytes32 s
     ) external virtual returns (bool) {
-        require(block.timestamp <= deadline, "ERC20SubscriptionPermit: expired deadline");
+        require(
+            block.timestamp <= deadline,
+            "ERC20SubscriptionPermit: expired deadline"
+        );
 
         bytes32 structHash = keccak256(
             abi.encode(
-                _PERMIT_TYPEHASH, owner, spender, value, recurrenceInterval, approveUntil, _useNonce(owner), deadline
+                _PERMIT_TYPEHASH,
+                owner,
+                spender,
+                value,
+                recurrenceInterval,
+                approveUntil,
+                _useNonce(owner),
+                deadline
             )
         );
 
@@ -68,6 +88,15 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
         require(signer == owner, "ERC20SubscriptionPermit: invalid signature");
 
         _allowances[owner][spender][recurrenceInterval][approveUntil] = value;
+
+        emit ApprovalForSubscription(
+            owner,
+            spender,
+            value,
+            recurrenceInterval,
+            approvedUntil
+        );
+
         return true;
     }
 
@@ -79,12 +108,24 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
      * @param approveUntil The time until which the approval is valid.
      * @return A boolean value indicating whether the operation succeeded.
      */
-    function approveForSubscription(address spender, uint256 value, uint32 recurrenceInterval, uint48 approveUntil)
-        external
-        virtual
-        returns (bool)
-    {
-        _allowances[msg.sender][spender][recurrenceInterval][approveUntil] = value;
+    function approveForSubscription(
+        address spender,
+        uint256 value,
+        uint32 recurrenceInterval,
+        uint48 approveUntil
+    ) external virtual returns (bool) {
+        _allowances[msg.sender][spender][recurrenceInterval][
+            approveUntil
+        ] = value;
+
+        emit ApprovalForSubscription(
+            owner,
+            spender,
+            value,
+            recurrenceInterval,
+            approvedUntil
+        );
+
         return true;
     }
 
@@ -96,17 +137,21 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
      * @param approvedUntil The time until which the approval is valid.
      * @return The allowance of the spender for a subscription on behalf of the owner.
      */
-    function allowanceForSubscription(address owner, address spender, uint32 recurrenceInterval, uint48 approvedUntil)
-        public
-        view
-        virtual
-        returns (uint256)
-    {
+    function allowanceForSubscription(
+        address owner,
+        address spender,
+        uint32 recurrenceInterval,
+        uint48 approvedUntil
+    ) public view virtual returns (uint256) {
         if (block.timestamp > approvedUntil && approvedUntil != 0) return 0;
 
         uint32 period = uint32(block.timestamp) / recurrenceInterval;
-        uint256 allowance = _allowances[owner][spender][recurrenceInterval][approvedUntil];
-        uint256 spent = _spent[owner][spender][recurrenceInterval][approvedUntil][period];
+        uint256 allowance = _allowances[owner][spender][recurrenceInterval][
+            approvedUntil
+        ];
+        uint256 spent = _spent[owner][spender][recurrenceInterval][
+            approvedUntil
+        ][period];
         return allowance - spent;
     }
 
@@ -124,7 +169,18 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
         uint32 recurrenceInterval,
         uint48 approvedUntil
     ) external virtual returns (bool) {
-        _allowances[msg.sender][spender][recurrenceInterval][approvedUntil] += addedAmount;
+        _allowances[msg.sender][spender][recurrenceInterval][
+            approvedUntil
+        ] += addedAmount;
+
+        emit ApprovalForSubscription(
+            owner,
+            spender,
+            _allowances[msg.sender][spender][recurrenceInterval][approvedUntil],
+            recurrenceInterval,
+            approvedUntil
+        );
+
         return true;
     }
 
@@ -142,7 +198,18 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
         uint32 recurrenceInterval,
         uint48 approvedUntil
     ) external virtual returns (bool) {
-        _allowances[msg.sender][spender][recurrenceInterval][approvedUntil] -= removedAmount;
+        _allowances[msg.sender][spender][recurrenceInterval][
+            approvedUntil
+        ] -= removedAmount;
+
+        emit ApprovalForSubscription(
+            owner,
+            spender,
+            _allowances[msg.sender][spender][recurrenceInterval][approvedUntil],
+            recurrenceInterval,
+            approvedUntil
+        );
+
         return true;
     }
 
@@ -182,15 +249,28 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
         uint32 recurrenceInterval,
         uint48 approvedUntil
     ) private {
-        uint256 currentAllowance = allowanceForSubscription(owner, spender, recurrenceInterval, approvedUntil);
-        require(amount <= currentAllowance, "ERC20Subscription: insufficient allowance");
+        uint256 currentAllowance = allowanceForSubscription(
+            owner,
+            spender,
+            recurrenceInterval,
+            approvedUntil
+        );
+        require(
+            amount <= currentAllowance,
+            "ERC20Subscription: insufficient allowance"
+        );
 
         uint256 fromBalance = balanceOf(owner);
-        require(fromBalance >= amount, "ERC20: transfer amount exceeds balance");
+        require(
+            fromBalance >= amount,
+            "ERC20: transfer amount exceeds balance"
+        );
 
         uint32 period = uint32(block.timestamp) / recurrenceInterval;
 
-        _spent[owner][spender][recurrenceInterval][approvedUntil][period] += amount;
+        _spent[owner][spender][recurrenceInterval][approvedUntil][
+            period
+        ] += amount;
     }
 
     /**
@@ -215,7 +295,9 @@ abstract contract ERC20Subscription is ERC20, EIP712 {
      * @param owner The owner address.
      * @return current The updated nonce value.
      */
-    function _useNonce(address owner) internal virtual returns (uint256 current) {
+    function _useNonce(
+        address owner
+    ) internal virtual returns (uint256 current) {
         Counters.Counter storage nonce = _nonces[owner];
         current = nonce.current();
         nonce.increment();
